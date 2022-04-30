@@ -1,0 +1,29 @@
+[package]
+name = "api"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+base = { path = "../core" } 
+# base = { git = "ssh://git@github.com/ivanschuetz/capi-core.git", branch = "main" }
+
+# algonaut = { git = "https://github.com/manuelmauro/algonaut", branch = "main", features = ["rustls"], default-features = false }
+algonaut = { path = "../../algonaut" }
+anyhow = "1.0"
+serde = {version = "1.0", features = ["derive"]}
+warp = "0.3"
+rocket = "0.5.0-rc.1"
+log = "0.4"
+tokio = { version = "1.2.0", features = ["full"] }
+tokio-postgres = { version = "0.7.2", features = ["with-chrono-0_4"] }
+async-trait = "0.1.51"
+data-encoding = "2.3.2"
+serde_json = "1.0.64"
+chrono = "0.4.19"
+dotenv = "0.10.0"
+log4rs = "0.12.0"
+uuid = { git = "https://github.com/uuid-rs/uuid", tag = "1.0.0-alpha.1", features = ["serde", "v4"] }
+rusqlite = "0.14"
+sha2 = "0.10.1"
