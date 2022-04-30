@@ -1,14 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use data_encoding::BASE64;
-use log::debug;
 use sha2::Digest;
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
-use tokio_postgres::Client;
+use std::{collections::HashMap, sync::Mutex};
 
 #[async_trait]
 pub trait ImageDao: Sync + Send {
@@ -53,7 +47,6 @@ impl ImageDao for MemImageDaoImpl {
         let encoded_hash = BASE64.encode(&hash);
 
         println!("encoded_hash: {:?}", encoded_hash);
-        // let encoded_hash = dbg!(encoded_hash);
 
         let mut s = self.state.lock().unwrap();
         s.insert(encoded_hash, image.to_vec()); // TODO maybe parameter vec
@@ -67,10 +60,6 @@ impl ImageDao for MemImageDaoImpl {
 
         let s = self.state.lock().unwrap();
         Ok(s.get(id).map(|o| o.to_owned()))
-        // match s.get(id) {
-        //     Some(bytes) => Ok(bytes.to_owned()),
-        //     None => Err(anyhow!("Image not found: {id:?}")),
-        // }
     }
 }
 
@@ -79,7 +68,6 @@ mod test {
     use super::{ImageDao, ImageDaoImpl};
     use crate::{dao::db::create_db_client, logger::init_logger};
     use anyhow::Result;
-    use std::sync::Arc;
     // use tokio::test;
 
     #[test]
@@ -104,8 +92,6 @@ mod test {
 
     fn create_test_image_dao() -> Result<Box<dyn ImageDao>> {
         let client = create_db_client()?;
-        Ok(Box::new(ImageDaoImpl {
-            client: Arc::new(client),
-        }))
+        Ok(Box::new(ImageDaoImpl {}))
     }
 }
