@@ -1,4 +1,2 @@
 /target
-/core
-/logger
-
+.env
