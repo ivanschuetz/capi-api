@@ -1,34 +1,70 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use aws_config::meta::region::RegionProviderChain;
+use aws_sdk_s3::{Client, Region, PKG_VERSION};
 use data_encoding::BASE64;
 use sha2::Digest;
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
+use crate::dao::aws::{download_bytes, upload_bytes};
 
 #[async_trait]
 pub trait ImageDao: Sync + Send {
-    fn init(&self) -> Result<()>;
-
-    fn save_image(&self, image: &[u8]) -> Result<()>;
-    fn load_image(&self, id: &str) -> Result<Option<Vec<u8>>>;
+    async fn save_image(&self, image: Vec<u8>) -> Result<()>;
+    async fn load_image(&self, id: &str) -> Result<Option<Vec<u8>>>;
 }
-pub struct ImageDaoImpl {
-    // pub client: Arc<Client>,
+pub struct AwsImageDao {
+    key: String,
+    bucket: String,
+    client: Arc<Client>,
+}
+
+impl AwsImageDao {
+    pub async fn new() -> Result<AwsImageDao> {
+        let bucket = "cimgbucket".to_owned();
+        let key = "foobar2".to_owned();
+        let region = "us-east-1";
+
+        let region_provider = RegionProviderChain::first_try(Region::new(region))
+            .or_default_provider()
+            .or_else(Region::new("us-west-2"));
+
+        println!("S3 client version: {}", PKG_VERSION);
+        println!("Bucket: {}", &bucket);
+        println!(
+            "Region: {}",
+            region_provider.region().await.unwrap().as_ref()
+        );
+
+        let shared_config = aws_config::from_env().region(region_provider).load().await;
+        let client = Client::new(&shared_config);
+
+        Ok(AwsImageDao {
+            key,
+            bucket,
+            client: Arc::new(client),
+        })
+    }
 }
 
 #[async_trait]
-impl ImageDao for ImageDaoImpl {
-    fn init(&self) -> Result<()> {
-        Ok(())
-    }
-
-    fn save_image(&self, image: &[u8]) -> Result<()> {
+impl ImageDao for AwsImageDao {
+    async fn save_image(&self, image: Vec<u8>) -> Result<()> {
         println!("saving image: {:?}", image);
+        let res = upload_bytes(&self.client, &self.bucket, image, &self.key).await?;
+        // let res = upload_object(&client, &bucket, &filename, &key).await?;
+        println!("upload res: {:?}", res);
         Ok(())
     }
 
-    fn load_image(&self, id: &str) -> Result<Option<Vec<u8>>> {
+    async fn load_image(&self, id: &str) -> Result<Option<Vec<u8>>> {
         println!("loading image: {:?}", id);
-        Ok(Some(vec![]))
+        let res = download_bytes(&self.client, &self.bucket, &id).await?;
+        println!("download res: {:?}", res);
+        Ok(res)
     }
 }
 
@@ -38,24 +74,20 @@ pub struct MemImageDaoImpl {
 
 #[async_trait]
 impl ImageDao for MemImageDaoImpl {
-    fn init(&self) -> Result<()> {
-        Ok(())
-    }
-
-    fn save_image(&self, image: &[u8]) -> Result<()> {
-        let hash = sha2::Sha512_256::digest(image);
+    async fn save_image(&self, image: Vec<u8>) -> Result<()> {
+        let hash = sha2::Sha512_256::digest(image.clone());
         let encoded_hash = BASE64.encode(&hash);
 
         println!("encoded_hash: {:?}", encoded_hash);
 
         let mut s = self.state.lock().unwrap();
-        s.insert(encoded_hash, image.to_vec()); // TODO maybe parameter vec
-
         println!("saving image: {:?}", image);
+        s.insert(encoded_hash, image);
+
         Ok(())
     }
 
-    fn load_image(&self, id: &str) -> Result<Option<Vec<u8>>> {
+    async fn load_image(&self, id: &str) -> Result<Option<Vec<u8>>> {
         println!("loading image: {:?}", id);
 
         let s = self.state.lock().unwrap();
@@ -65,18 +97,17 @@ impl ImageDao for MemImageDaoImpl {
 
 #[cfg(test)]
 mod test {
-    use super::{ImageDao, ImageDaoImpl};
+    use std::{collections::HashMap, sync::Mutex};
+
+    use super::{ImageDao, MemImageDaoImpl};
     use crate::logger::init_logger;
     use anyhow::Result;
-    // use tokio::test;
 
     #[test]
     #[ignore]
     fn test_init() -> Result<()> {
         init_logger();
         let image_dao = create_test_image_dao()?;
-
-        image_dao.init()?;
         Ok(())
     }
 
@@ -91,6 +122,8 @@ mod test {
     }
 
     fn create_test_image_dao() -> Result<Box<dyn ImageDao>> {
-        Ok(Box::new(ImageDaoImpl {}))
+        Ok(Box::new(MemImageDaoImpl {
+            state: Mutex::new(HashMap::new()),
+        }))
     }
 }

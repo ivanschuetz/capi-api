@@ -1,3 +1,5 @@
+use aws_sdk_s3::error::{GetObjectError, GetObjectErrorKind};
+use aws_sdk_s3::types::SdkError;
 use aws_sdk_s3::{types::ByteStream, Client, Error, Region, PKG_VERSION};
 use std::path::Path;
 use std::process;
@@ -26,16 +28,49 @@ pub struct Opt {
     pub verbose: bool,
 }
 
-pub async fn download_bytes(client: &Client, bucket: &str, key: &str) -> Result<(), Error> {
+pub async fn download_bytes(
+    client: &Client,
+    bucket: &str,
+    key: &str,
+) -> Result<Option<Vec<u8>>, Error> {
     println!("will get object..");
 
-    let resp = client.get_object().bucket(bucket).key(key).send().await?;
-    let data = resp.body.collect().await;
+    match client.get_object().bucket(bucket).key(key).send().await {
+        Ok(resp) => {
+            let data = resp.body.collect().await;
 
-    let bytes = data.unwrap().into_bytes().to_vec();
-    println!("data: {:?}", bytes);
+            let bytes = data.unwrap().into_bytes().to_vec();
+            println!("data: {:?}", bytes);
 
-    Ok(())
+            Ok(Some(bytes))
+        }
+
+        Err(e) => {
+            println!("Error retrieving image: {} for key: {}", e, key);
+            match &e {
+                SdkError::ServiceError { err, .. } => match &err.kind {
+                    GetObjectErrorKind::Unhandled(m) => {
+                        let text = format!("{}", m);
+                        // when downloading a not existing id, we get access denied, so map to None, so web framework returns 404
+                        // this error isn't structured (just dyn error) so processing the text
+                        if text.contains("code: \"AccessDenied\"") {
+                            Ok(None)
+                        } else {
+                            Err(e.into())
+                        }
+                    }
+                    // this is what we intuitively expect for "not found" but for some reason we get GetObjectErrorKind::Unhandled with "access denied"
+                    // we handle it the same anyway
+                    GetObjectErrorKind::NoSuchKey(m) => {
+                        println!("No such key error: {} for key: {}", m, key);
+                        Ok(None)
+                    }
+                    _ => Err(e.into()),
+                },
+                _ => Err(e.into()),
+            }
+        }
+    }
 }
 
 // Upload bytes to a bucket.
