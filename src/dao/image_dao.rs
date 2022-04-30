@@ -2,22 +2,22 @@ use anyhow::Result;
 use async_trait::async_trait;
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{Client, Region, PKG_VERSION};
-use data_encoding::BASE64;
-use sha2::Digest;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
 
-use crate::dao::aws::{download_bytes, upload_bytes};
+use crate::{
+    dao::aws::{download_bytes, upload_bytes},
+    hash,
+};
 
 #[async_trait]
 pub trait ImageDao: Sync + Send {
-    async fn save_image(&self, image: Vec<u8>) -> Result<()>;
+    async fn save_image(&self, id: &str, image: Vec<u8>) -> Result<()>;
     async fn load_image(&self, id: &str) -> Result<Option<Vec<u8>>>;
 }
 pub struct AwsImageDao {
-    key: String,
     bucket: String,
     client: Arc<Client>,
 }
@@ -25,7 +25,6 @@ pub struct AwsImageDao {
 impl AwsImageDao {
     pub async fn new() -> Result<AwsImageDao> {
         let bucket = "cimgbucket".to_owned();
-        let key = "foobar2".to_owned();
         let region = "us-east-1";
 
         let region_provider = RegionProviderChain::first_try(Region::new(region))
@@ -43,7 +42,6 @@ impl AwsImageDao {
         let client = Client::new(&shared_config);
 
         Ok(AwsImageDao {
-            key,
             bucket,
             client: Arc::new(client),
         })
@@ -52,9 +50,9 @@ impl AwsImageDao {
 
 #[async_trait]
 impl ImageDao for AwsImageDao {
-    async fn save_image(&self, image: Vec<u8>) -> Result<()> {
-        println!("saving image: {:?}", image);
-        let res = upload_bytes(&self.client, &self.bucket, image, &self.key).await?;
+    async fn save_image(&self, id: &str, image: Vec<u8>) -> Result<()> {
+        println!("saving id: {:?} image: {:?}", id, image);
+        let res = upload_bytes(&self.client, &self.bucket, image, id).await?;
         // let res = upload_object(&client, &bucket, &filename, &key).await?;
         println!("upload res: {:?}", res);
         Ok(())
@@ -62,7 +60,7 @@ impl ImageDao for AwsImageDao {
 
     async fn load_image(&self, id: &str) -> Result<Option<Vec<u8>>> {
         println!("loading image: {:?}", id);
-        let res = download_bytes(&self.client, &self.bucket, &id).await?;
+        let res = download_bytes(&self.client, &self.bucket, id).await?;
         println!("download res: {:?}", res);
         Ok(res)
     }
@@ -74,15 +72,12 @@ pub struct MemImageDaoImpl {
 
 #[async_trait]
 impl ImageDao for MemImageDaoImpl {
-    async fn save_image(&self, image: Vec<u8>) -> Result<()> {
-        let hash = sha2::Sha512_256::digest(image.clone());
-        let encoded_hash = BASE64.encode(&hash);
-
-        println!("encoded_hash: {:?}", encoded_hash);
+    async fn save_image(&self, id: &str, image: Vec<u8>) -> Result<()> {
+        println!("id: {:?}", id);
 
         let mut s = self.state.lock().unwrap();
         println!("saving image: {:?}", image);
-        s.insert(encoded_hash, image);
+        s.insert(id.to_owned(), image);
 
         Ok(())
     }

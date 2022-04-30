@@ -4,10 +4,12 @@ extern crate rocket;
 
 use anyhow::Result;
 use dao::image_dao::{AwsImageDao, ImageDao};
+use data_encoding::BASE64;
 use dotenv::dotenv;
 use rocket::data::ToByteUnit;
 use rocket::State;
 use rocket::{response::Debug, Data};
+use sha2::Digest;
 use std::env;
 
 mod dao;
@@ -28,7 +30,9 @@ async fn save_image(
     println!("byte_count: {:?}", byte_count);
     println!("vec: {:?}", vec);
 
-    dao.save_image(vec).await?;
+    let id = hash(&vec);
+
+    dao.save_image(&id, vec).await?;
 
     Ok("done...".to_owned())
 }
@@ -61,6 +65,11 @@ async fn main() -> Result<()> {
         .await?;
 
     Ok(())
+}
+
+fn hash(bytes: &[u8]) -> String {
+    let hash = sha2::Sha512_256::digest(bytes);
+    BASE64.encode(&hash)
 }
 
 fn frontend_host(env: &Env) -> &'static str {
