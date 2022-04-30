@@ -66,7 +66,7 @@ impl ImageDao for MemImageDaoImpl {
 #[cfg(test)]
 mod test {
     use super::{ImageDao, ImageDaoImpl};
-    use crate::{dao::db::create_db_client, logger::init_logger};
+    use crate::logger::init_logger;
     use anyhow::Result;
     // use tokio::test;
 
@@ -74,9 +74,9 @@ mod test {
     #[ignore]
     fn test_init() -> Result<()> {
         init_logger();
-        let project_dao = create_test_image_dao()?;
+        let image_dao = create_test_image_dao()?;
 
-        project_dao.init()?;
+        image_dao.init()?;
         Ok(())
     }
 
@@ -85,13 +85,12 @@ mod test {
     #[ignore]
     fn test_insert_and_load_an_image() -> Result<()> {
         init_logger();
-        let project_dao = create_test_image_dao()?;
+        let _image_dao = create_test_image_dao()?;
 
         todo!();
     }
 
     fn create_test_image_dao() -> Result<Box<dyn ImageDao>> {
-        let client = create_db_client()?;
         Ok(Box::new(ImageDaoImpl {}))
     }
 }
