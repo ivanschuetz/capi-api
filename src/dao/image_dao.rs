@@ -1,3 +1,4 @@
+use crate::dao::aws::{download_bytes, upload_bytes};
 use anyhow::Result;
 use async_trait::async_trait;
 use aws_config::meta::region::RegionProviderChain;
@@ -5,11 +6,6 @@ use aws_sdk_s3::{Client, Region, PKG_VERSION};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
-};
-
-use crate::{
-    dao::aws::{download_bytes, upload_bytes},
-    hash,
 };
 
 #[async_trait]
@@ -67,6 +63,7 @@ impl ImageDao for AwsImageDao {
 }
 
 pub struct MemImageDaoImpl {
+    // TODO mutex needed?
     pub state: Mutex<HashMap<String, Vec<u8>>>,
 }
 
