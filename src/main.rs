@@ -1,16 +1,16 @@
-#![feature(proc_macro_hygiene, decl_macro)]
+#![feature(integer_atomics, proc_macro_hygiene, decl_macro)]
 #[macro_use]
 extern crate rocket;
 
 use algonaut::model::indexer::v2::QueryApplicationInfo;
 use anyhow::Result;
-use base::dependencies::{algod, indexer};
-use base::flows::create_dao::setup_dao_specs::ImageHash;
-use base::flows::create_dao::storage::load_dao::DaoAppId;
-use base::state::dao_app_state::dao_global_state;
 use dao::image_dao::{AwsImageDao, ImageDao};
 use data_encoding::BASE64;
 use dotenv::dotenv;
+use mbase::dependencies::{algod, indexer};
+use mbase::models::dao_app_id::DaoAppId;
+use mbase::models::image_hash::ImageHash;
+use mbase::state::dao_app_state::dao_global_state;
 use rocket::data::ToByteUnit;
 use rocket::http::Method;
 use rocket::response::content::Custom;

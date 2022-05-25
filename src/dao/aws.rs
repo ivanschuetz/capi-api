@@ -1,6 +1,6 @@
-use aws_sdk_s3::error::{GetObjectError, GetObjectErrorKind};
+use aws_sdk_s3::error::GetObjectErrorKind;
 use aws_sdk_s3::types::SdkError;
-use aws_sdk_s3::{types::ByteStream, Client, Error, Region, PKG_VERSION};
+use aws_sdk_s3::{types::ByteStream, Client, Error};
 use std::path::Path;
 use std::process;
 use structopt::StructOpt;
@@ -104,6 +104,7 @@ pub async fn upload_bytes(
 
 // Upload a file to a bucket.
 // snippet-start:[s3.rust.s3-helloworld]
+#[allow(dead_code)]
 pub async fn upload_object(
     client: &Client,
     bucket: &str,
