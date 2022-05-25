@@ -6,8 +6,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-base = { path = "../core" } 
-# base = { git = "ssh://git@github.com/ivanschuetz/capi-core.git", branch = "main" }
+mbase = { path = "./mbase" } 
 
 # algonaut = { git = "https://github.com/manuelmauro/algonaut", branch = "main", features = ["rustls"], default-features = false }
 algonaut = { path = "../../algonaut" }
