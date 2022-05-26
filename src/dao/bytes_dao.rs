@@ -9,17 +9,17 @@ use std::{
 };
 
 #[async_trait]
-pub trait ImageDao: Sync + Send {
-    async fn save_image(&self, id: &str, image: Vec<u8>) -> Result<()>;
-    async fn load_image(&self, id: &str) -> Result<Option<Vec<u8>>>;
+pub trait BytesDao: Sync + Send {
+    async fn save_bytes(&self, id: &str, bytes: Vec<u8>) -> Result<()>;
+    async fn load_bytes(&self, id: &str) -> Result<Option<Vec<u8>>>;
 }
-pub struct AwsImageDao {
+pub struct AwsBytesDao {
     bucket: String,
     client: Arc<Client>,
 }
 
-impl AwsImageDao {
-    pub async fn new() -> Result<AwsImageDao> {
+impl AwsBytesDao {
+    pub async fn new() -> Result<AwsBytesDao> {
         let bucket = "cimgbucket".to_owned();
         let region = "us-east-1";
 
@@ -37,7 +37,7 @@ impl AwsImageDao {
         let shared_config = aws_config::from_env().region(region_provider).load().await;
         let client = Client::new(&shared_config);
 
-        Ok(AwsImageDao {
+        Ok(AwsBytesDao {
             bucket,
             client: Arc::new(client),
         })
@@ -45,42 +45,42 @@ impl AwsImageDao {
 }
 
 #[async_trait]
-impl ImageDao for AwsImageDao {
-    async fn save_image(&self, id: &str, image: Vec<u8>) -> Result<()> {
-        println!("saving id: {:?} image: {:?}", id, image);
-        let res = upload_bytes(&self.client, &self.bucket, image, id).await?;
+impl BytesDao for AwsBytesDao {
+    async fn save_bytes(&self, id: &str, bytes: Vec<u8>) -> Result<()> {
+        println!("saving id: {:?} bytes: {:?}", id, bytes);
+        let res = upload_bytes(&self.client, &self.bucket, bytes, id).await?;
         // let res = upload_object(&client, &bucket, &filename, &key).await?;
         println!("upload res: {:?}", res);
         Ok(())
     }
 
-    async fn load_image(&self, id: &str) -> Result<Option<Vec<u8>>> {
-        println!("loading image: {:?}", id);
+    async fn load_bytes(&self, id: &str) -> Result<Option<Vec<u8>>> {
+        println!("loading bytes for id: {:?}", id);
         let res = download_bytes(&self.client, &self.bucket, id).await?;
         println!("download res: {:?}", res);
         Ok(res)
     }
 }
 
-pub struct MemImageDaoImpl {
+pub struct MemBytesDaoImpl {
     // TODO mutex needed?
     pub state: Mutex<HashMap<String, Vec<u8>>>,
 }
 
 #[async_trait]
-impl ImageDao for MemImageDaoImpl {
-    async fn save_image(&self, id: &str, image: Vec<u8>) -> Result<()> {
+impl BytesDao for MemBytesDaoImpl {
+    async fn save_bytes(&self, id: &str, bytes: Vec<u8>) -> Result<()> {
         println!("id: {:?}", id);
 
         let mut s = self.state.lock().unwrap();
-        println!("saving image: {:?}", image);
-        s.insert(id.to_owned(), image);
+        println!("saving bytes: {:?}", bytes);
+        s.insert(id.to_owned(), bytes);
 
         Ok(())
     }
 
-    async fn load_image(&self, id: &str) -> Result<Option<Vec<u8>>> {
-        println!("loading image: {:?}", id);
+    async fn load_bytes(&self, id: &str) -> Result<Option<Vec<u8>>> {
+        println!("loading bytes: {:?}", id);
 
         let s = self.state.lock().unwrap();
         Ok(s.get(id).map(|o| o.to_owned()))
@@ -91,7 +91,7 @@ impl ImageDao for MemImageDaoImpl {
 mod test {
     use std::{collections::HashMap, sync::Mutex};
 
-    use super::{ImageDao, MemImageDaoImpl};
+    use super::{BytesDao, MemBytesDaoImpl};
     use crate::logger::init_logger;
     use anyhow::Result;
 
@@ -99,7 +99,7 @@ mod test {
     #[ignore]
     fn test_init() -> Result<()> {
         init_logger();
-        let image_dao = create_test_image_dao()?;
+        let bytes_dao = create_test_bytes_dao()?;
         Ok(())
     }
 
@@ -108,13 +108,13 @@ mod test {
     #[ignore]
     fn test_insert_and_load_an_image() -> Result<()> {
         init_logger();
-        let _image_dao = create_test_image_dao()?;
+        let _image_dao = create_test_bytes_dao()?;
 
         todo!();
     }
 
-    fn create_test_image_dao() -> Result<Box<dyn ImageDao>> {
-        Ok(Box::new(MemImageDaoImpl {
+    fn create_test_bytes_dao() -> Result<Box<dyn BytesDao>> {
+        Ok(Box::new(MemBytesDaoImpl {
             state: Mutex::new(HashMap::new()),
         }))
     }

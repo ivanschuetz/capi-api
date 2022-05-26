@@ -1,3 +1,3 @@
 pub mod aws;
+pub mod bytes_dao;
 pub mod db;
-pub mod image_dao;

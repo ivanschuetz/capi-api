@@ -4,14 +4,14 @@ extern crate rocket;
 
 use algonaut::model::indexer::v2::QueryApplicationInfo;
 use anyhow::Result;
-use dao::image_dao::{AwsImageDao, ImageDao};
+use dao::bytes_dao::{AwsBytesDao, BytesDao};
 use data_encoding::BASE64;
 use dotenv::dotenv;
 use mbase::dependencies::{algod, indexer};
 use mbase::models::dao_app_id::DaoAppId;
-use mbase::models::image_hash::ImageHash;
+use mbase::models::image_hash::GlobalStateHash;
 use mbase::state::dao_app_state::dao_global_state;
-use rocket::data::ToByteUnit;
+use rocket::data::{ByteUnit, ToByteUnit};
 use rocket::http::Method;
 use rocket::response::content::Custom;
 use rocket::State;
@@ -25,9 +25,35 @@ mod logger;
 
 #[post("/image/<app_id>", format = "binary", data = "<data>")]
 async fn save_image(
-    dao: &State<Box<dyn ImageDao>>,
+    dao: &State<Box<dyn BytesDao>>,
     data: Data<'_>,
     app_id: u64,
+) -> Result<Option<String>, rocket::response::Debug<anyhow::Error>> {
+    save_bytes(dao, data, app_id, 2.mebibytes(), StateField::ImageHash).await
+}
+
+#[post("/descr/<app_id>", format = "binary", data = "<data>")]
+async fn save_descr(
+    dao: &State<Box<dyn BytesDao>>,
+    data: Data<'_>,
+    app_id: u64,
+) -> Result<Option<String>, rocket::response::Debug<anyhow::Error>> {
+    save_bytes(
+        dao,
+        data,
+        app_id,
+        500.kilobytes(),
+        StateField::DescriptionHash,
+    )
+    .await
+}
+
+async fn save_bytes(
+    dao: &State<Box<dyn BytesDao>>,
+    data: Data<'_>,
+    app_id: u64,
+    max_size: ByteUnit,
+    state: StateField,
 ) -> Result<Option<String>, rocket::response::Debug<anyhow::Error>> {
     let mut vec = vec![];
 
@@ -35,7 +61,8 @@ async fn save_image(
     // the client has to compress / ask user to reduce
 
     let byte_count = data
-        .open(2.mebibytes())
+        // .open(500.kilobytes())
+        .open(max_size)
         .stream_to(&mut vec)
         .await
         .map_err(|e| Debug(anyhow::Error::msg(format!("{e:?}"))))?;
@@ -44,8 +71,8 @@ async fn save_image(
     println!("vec: {:?}", vec);
 
     let hash = hash(&vec);
-    if is_on_chain_with_dao_state(app_id, &hash).await? {
-        dao.save_image(&hash, vec).await?;
+    if is_on_chain_with_dao_state(app_id, &hash, state).await? {
+        dao.save_bytes(&hash, vec).await?;
         Ok(Some("done...".to_owned()))
     } else {
         println!("Didn't find app id or hash in the app");
@@ -53,22 +80,21 @@ async fn save_image(
     }
 }
 
-// sends image as raw bytes - seems not needed. keeping it for now for historical / understanding purpose
-#[get("/image/<id>", format = "binary")]
+#[get("/descr/<id>", format = "binary")]
 #[allow(dead_code)]
-async fn get_image(
-    dao: &State<Box<dyn ImageDao>>,
+async fn get_descr(
+    dao: &State<Box<dyn BytesDao>>,
     id: String,
 ) -> Result<Option<Vec<u8>>, Debug<anyhow::Error>> {
-    Ok(dao.load_image(&id).await?)
+    Ok(dao.load_bytes(&id).await?)
 }
 
 #[get("/image/<id>", format = "image/avif")]
 async fn get_image_jpeg(
-    dao: &State<Box<dyn ImageDao>>,
+    dao: &State<Box<dyn BytesDao>>,
     id: String,
 ) -> Result<Custom<Option<Vec<u8>>>, Debug<anyhow::Error>> {
-    let maybe_bytes = dao.load_image(&id).await?;
+    let maybe_bytes = dao.load_bytes(&id).await?;
     // we expect all the stored images to be in jpeg format - if stored with our frontend (which should be the only one talking to the backend)
     // if somehow someone manages to store something not jpeg, then this response may be corrupted
     Ok(Custom(rocket::http::ContentType::JPEG, maybe_bytes))
@@ -84,7 +110,7 @@ fn write_bytes_to_file() {
 async fn main() -> Result<()> {
     // init_logger();
 
-    let image_dao: Box<dyn ImageDao> = Box::new(AwsImageDao::new().await?);
+    let bytes_dao: Box<dyn BytesDao> = Box::new(AwsBytesDao::new().await?);
 
     let env = environment();
 
@@ -118,8 +144,11 @@ async fn main() -> Result<()> {
     .to_cors()?;
 
     rocket::build()
-        .manage(image_dao)
-        .mount("/", routes![get_image_jpeg, save_image])
+        .manage(bytes_dao)
+        .mount(
+            "/",
+            routes![get_image_jpeg, save_image, get_descr, save_descr],
+        )
         .attach(cors)
         // .register("/", catchers![not_found])
         .launch()
@@ -133,11 +162,22 @@ fn hash(bytes: &[u8]) -> String {
     BASE64.encode(&hash)
 }
 
-async fn is_on_chain_with_dao_state(app_id: u64, hash: &str) -> Result<bool> {
+#[derive(Debug, Clone, Copy)]
+enum StateField {
+    ImageHash,
+    DescriptionHash,
+}
+
+async fn is_on_chain_with_dao_state(app_id: u64, hash: &str, field: StateField) -> Result<bool> {
     let algod = algod();
 
     let state = dao_global_state(&algod, DaoAppId(app_id)).await?;
-    if state.image_hash == Some(ImageHash(hash.to_owned())) {
+    let value = match field {
+        StateField::ImageHash => state.image_hash,
+        StateField::DescriptionHash => state.project_desc,
+    };
+
+    if value == Some(GlobalStateHash(hash.to_owned())) {
         return Ok(true);
     } else {
         return Ok(false);
@@ -149,7 +189,7 @@ async fn is_on_chain_with_dao_state(app_id: u64, hash: &str) -> Result<bool> {
 // 2) we already have a state reader in the domain, which uses algod (used in is_on_chain_with_dao_state)
 // leaving this anyway, since at least algoexplorer removed these kind of queries from algod (only possible with indexer)
 #[allow(dead_code)]
-async fn is_on_chain_indexer(app_id: u64, hash: &str) -> Result<bool> {
+async fn is_on_chain_indexer(app_id: u64, hash: &str, key: &str) -> Result<bool> {
     let indexer = indexer();
 
     let app_info_res = indexer
@@ -165,7 +205,7 @@ async fn is_on_chain_indexer(app_id: u64, hash: &str) -> Result<bool> {
         Ok(app_info) => match app_info.application {
             Some(app) => {
                 let key_values = app.params.global_state;
-                let key_value = key_values.into_iter().find(|kv| kv.key == "LogoUrl");
+                let key_value = key_values.into_iter().find(|kv| kv.key == key);
                 match key_value {
                     Some(kv) => {
                         let bytes = kv.value.bytes;
