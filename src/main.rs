@@ -9,7 +9,7 @@ use data_encoding::BASE64;
 use dotenv::dotenv;
 use mbase::dependencies::{algod, indexer};
 use mbase::models::dao_app_id::DaoAppId;
-use mbase::models::image_hash::GlobalStateHash;
+use mbase::models::hash::GlobalStateHash;
 use mbase::state::dao_app_state::dao_global_state;
 use rocket::data::{ByteUnit, ToByteUnit};
 use rocket::http::Method;
