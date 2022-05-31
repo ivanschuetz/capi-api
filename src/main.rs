@@ -110,6 +110,8 @@ fn write_bytes_to_file() {
 async fn main() -> Result<()> {
     // init_logger();
 
+    dotenv().ok();
+
     let bytes_dao: Box<dyn BytesDao> = Box::new(AwsBytesDao::new().await?);
 
     let env = environment();
@@ -247,7 +249,6 @@ pub enum Env {
 }
 
 fn environment() -> Env {
-    dotenv().ok();
     let env = env::var("TEST_ENV").unwrap();
     println!("Env value: {}", env);
     let env = if env == "1" { Env::Test } else { Env::Local };
