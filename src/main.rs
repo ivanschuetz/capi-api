@@ -3,10 +3,13 @@
 extern crate rocket;
 
 use algonaut::model::indexer::v2::QueryApplicationInfo;
-use anyhow::Result;
+use anyhow::{Result, Error};
 use dao::bytes_dao::{AwsBytesDao, BytesDao};
 use data_encoding::BASE64;
 use dotenv::dotenv;
+use mbase::api::contract::Contract;
+use mbase::api::teal_api::{TealApi, LocalTealApi};
+use mbase::api::version::Version;
 use mbase::dependencies::{algod, indexer};
 use mbase::models::dao_app_id::DaoAppId;
 use mbase::models::hash::GlobalStateHash;
@@ -25,21 +28,21 @@ mod logger;
 
 #[post("/image/<app_id>", format = "binary", data = "<data>")]
 async fn save_image(
-    dao: &State<Box<dyn BytesDao>>,
+    deps: &State<Box<Deps>>,
     data: Data<'_>,
     app_id: u64,
 ) -> Result<Option<String>, rocket::response::Debug<anyhow::Error>> {
-    save_bytes(dao, data, app_id, 2.mebibytes(), StateField::ImageHash).await
+    save_bytes(deps, data, app_id, 2.mebibytes(), StateField::ImageHash).await
 }
 
 #[post("/descr/<app_id>", format = "binary", data = "<data>")]
 async fn save_descr(
-    dao: &State<Box<dyn BytesDao>>,
+    deps: &State<Box<Deps>>,
     data: Data<'_>,
     app_id: u64,
 ) -> Result<Option<String>, rocket::response::Debug<anyhow::Error>> {
     save_bytes(
-        dao,
+        deps,
         data,
         app_id,
         500.kilobytes(),
@@ -49,7 +52,7 @@ async fn save_descr(
 }
 
 async fn save_bytes(
-    dao: &State<Box<dyn BytesDao>>,
+    deps: &State<Box<Deps>>,
     data: Data<'_>,
     app_id: u64,
     max_size: ByteUnit,
@@ -72,7 +75,7 @@ async fn save_bytes(
 
     let hash = hash(&vec);
     if is_on_chain_with_dao_state(app_id, &hash, state).await? {
-        dao.save_bytes(&hash, vec).await?;
+        deps.bytes_dao.save_bytes(&hash, vec).await?;
         Ok(Some("done...".to_owned()))
     } else {
         println!("Didn't find app id or hash in the app");
@@ -83,18 +86,39 @@ async fn save_bytes(
 #[get("/descr/<id>", format = "binary")]
 #[allow(dead_code)]
 async fn get_descr(
-    dao: &State<Box<dyn BytesDao>>,
+    deps: &State<Box<Deps>>,
     id: String,
 ) -> Result<Option<Vec<u8>>, Debug<anyhow::Error>> {
-    Ok(dao.load_bytes(&id).await?)
+    Ok(deps.bytes_dao.load_bytes(&id).await?)
+}
+
+#[get("/teal/<contract>/<version>", format = "binary")]
+#[allow(dead_code)]
+async fn get_teal_template(
+    deps: &State<Box<Deps>>,
+    contract: String,
+    version: String,
+) -> Result<Option<Vec<u8>>, Debug<anyhow::Error>> {
+    let contract = match contract.as_ref() {
+        "approval" => Contract::DaoAppApproval,
+        "clear" => Contract::DaoAppClear,
+        "customer" => Contract::DaoCustomer,
+        _ => return Ok(None)
+    };
+
+    let version_numer = version.parse().map_err(Error::msg)?;
+    let version = Version(version_numer);
+
+    let res = deps.teal_api.template(contract, version)?;
+    Ok(res.map(|r| r.template.0))
 }
 
 #[get("/image/<id>", format = "image/avif")]
 async fn get_image_jpeg(
-    dao: &State<Box<dyn BytesDao>>,
+    deps: &State<Box<Deps>>,
     id: String,
 ) -> Result<Custom<Option<Vec<u8>>>, Debug<anyhow::Error>> {
-    let maybe_bytes = dao.load_bytes(&id).await?;
+    let maybe_bytes = deps.bytes_dao.load_bytes(&id).await?;
     // we expect all the stored images to be in jpeg format - if stored with our frontend (which should be the only one talking to the backend)
     // if somehow someone manages to store something not jpeg, then this response may be corrupted
     Ok(Custom(rocket::http::ContentType::JPEG, maybe_bytes))
@@ -106,6 +130,11 @@ fn write_bytes_to_file() {
     std::fs::write(&format!("./tmp_bytes"), bytes).unwrap();
 }
 
+struct Deps {
+    bytes_dao: Box<dyn BytesDao>,
+    teal_api: Box<dyn TealApi>,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // init_logger();
@@ -113,6 +142,11 @@ async fn main() -> Result<()> {
     dotenv().ok();
 
     let bytes_dao: Box<dyn BytesDao> = Box::new(AwsBytesDao::new().await?);
+    let teal_api: Box<dyn TealApi> = Box::new(LocalTealApi {});
+
+    let deps = Deps {
+        bytes_dao, teal_api
+    };
 
     let env = environment();
 
@@ -146,10 +180,10 @@ async fn main() -> Result<()> {
     .to_cors()?;
 
     rocket::build()
-        .manage(bytes_dao)
+        .manage(Box::new(deps))
         .mount(
             "/",
-            routes![get_image_jpeg, save_image, get_descr, save_descr],
+            routes![get_image_jpeg, save_image, get_descr, save_descr, get_teal_template],
         )
         .attach(cors)
         // .register("/", catchers![not_found])
