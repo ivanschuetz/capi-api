@@ -20,6 +20,7 @@ use rocket::response::content::Custom;
 use rocket::State;
 use rocket::{response::Debug, Data};
 use rocket_cors::{AllowedHeaders, AllowedOrigins};
+use serde_json::Value;
 use sha2::Digest;
 use std::env;
 
@@ -90,6 +91,17 @@ async fn get_descr(
     id: String,
 ) -> Result<Option<Vec<u8>>, Debug<anyhow::Error>> {
     Ok(deps.bytes_dao.load_bytes(&id).await?)
+}
+
+// TODO JSON - unclear how to use here. See https://rocket.rs/v0.5-rc/guide/responses/#json
+#[get("/teal/versions", format = "json")]
+#[allow(dead_code)]
+async fn get_teal_versions(
+    deps: &State<Box<Deps>>,
+) -> Result<String, Debug<anyhow::Error>> {
+    let versions = deps.teal_api.last_versions();
+    let json = serde_json::to_string(&versions).map_err(Error::msg)?;
+    Ok(json)
 }
 
 #[get("/teal/<contract>/<version>", format = "binary")]
@@ -183,7 +195,7 @@ async fn main() -> Result<()> {
         .manage(Box::new(deps))
         .mount(
             "/",
-            routes![get_image_jpeg, save_image, get_descr, save_descr, get_teal_template],
+            routes![get_image_jpeg, save_image, get_descr, save_descr, get_teal_template, get_teal_versions],
         )
         .attach(cors)
         // .register("/", catchers![not_found])
