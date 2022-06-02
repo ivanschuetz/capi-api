@@ -3,12 +3,12 @@
 extern crate rocket;
 
 use algonaut::model::indexer::v2::QueryApplicationInfo;
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 use dao::bytes_dao::{AwsBytesDao, BytesDao};
 use data_encoding::BASE64;
 use dotenv::dotenv;
 use mbase::api::contract::Contract;
-use mbase::api::teal_api::{TealApi, LocalTealApi};
+use mbase::api::teal_api::TealFileLoader;
 use mbase::api::version::Version;
 use mbase::dependencies::{algod, indexer};
 use mbase::models::dao_app_id::DaoAppId;
@@ -20,7 +20,6 @@ use rocket::response::content::Custom;
 use rocket::State;
 use rocket::{response::Debug, Data};
 use rocket_cors::{AllowedHeaders, AllowedOrigins};
-use serde_json::Value;
 use sha2::Digest;
 use std::env;
 
@@ -96,9 +95,7 @@ async fn get_descr(
 // TODO JSON - unclear how to use here. See https://rocket.rs/v0.5-rc/guide/responses/#json
 #[get("/teal/versions", format = "json")]
 #[allow(dead_code)]
-async fn get_teal_versions(
-    deps: &State<Box<Deps>>,
-) -> Result<String, Debug<anyhow::Error>> {
+async fn get_teal_versions(deps: &State<Box<Deps>>) -> Result<String, Debug<anyhow::Error>> {
     let versions = deps.teal_api.last_versions();
     let json = serde_json::to_string(&versions).map_err(Error::msg)?;
     Ok(json)
@@ -115,7 +112,7 @@ async fn get_teal_template(
         "approval" => Contract::DaoAppApproval,
         "clear" => Contract::DaoAppClear,
         "customer" => Contract::DaoCustomer,
-        _ => return Ok(None)
+        _ => return Ok(None),
     };
 
     let version_numer = version.parse().map_err(Error::msg)?;
@@ -144,7 +141,7 @@ fn write_bytes_to_file() {
 
 struct Deps {
     bytes_dao: Box<dyn BytesDao>,
-    teal_api: Box<dyn TealApi>,
+    teal_api: TealFileLoader,
 }
 
 #[tokio::main]
@@ -154,10 +151,11 @@ async fn main() -> Result<()> {
     dotenv().ok();
 
     let bytes_dao: Box<dyn BytesDao> = Box::new(AwsBytesDao::new().await?);
-    let teal_api: Box<dyn TealApi> = Box::new(LocalTealApi {});
+    let teal_api = TealFileLoader {};
 
     let deps = Deps {
-        bytes_dao, teal_api
+        bytes_dao,
+        teal_api,
     };
 
     let env = environment();
@@ -195,7 +193,14 @@ async fn main() -> Result<()> {
         .manage(Box::new(deps))
         .mount(
             "/",
-            routes![get_image_jpeg, save_image, get_descr, save_descr, get_teal_template, get_teal_versions],
+            routes![
+                get_image_jpeg,
+                save_image,
+                get_descr,
+                save_descr,
+                get_teal_template,
+                get_teal_versions
+            ],
         )
         .attach(cors)
         // .register("/", catchers![not_found])
