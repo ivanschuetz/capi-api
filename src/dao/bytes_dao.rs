@@ -27,9 +27,9 @@ impl AwsBytesDao {
             .or_default_provider()
             .or_else(Region::new("us-west-2"));
 
-        println!("S3 client version: {}", PKG_VERSION);
-        println!("Bucket: {}", &bucket);
-        println!(
+        log::info!("S3 client version: {}", PKG_VERSION);
+        log::info!("Bucket: {}", &bucket);
+        log::info!(
             "Region: {}",
             region_provider.region().await.unwrap().as_ref()
         );
@@ -47,17 +47,17 @@ impl AwsBytesDao {
 #[async_trait]
 impl BytesDao for AwsBytesDao {
     async fn save_bytes(&self, id: &str, bytes: Vec<u8>) -> Result<()> {
-        println!("saving id: {:?} bytes: {:?}", id, bytes);
+        log::debug!("saving id: {:?} bytes: {:?}", id, bytes);
         let res = upload_bytes(&self.client, &self.bucket, bytes, id).await?;
         // let res = upload_object(&client, &bucket, &filename, &key).await?;
-        println!("upload res: {:?}", res);
+        log::debug!("upload res: {:?}", res);
         Ok(())
     }
 
     async fn load_bytes(&self, id: &str) -> Result<Option<Vec<u8>>> {
-        println!("loading bytes for id: {:?}", id);
+        log::debug!("loading bytes for id: {:?}", id);
         let res = download_bytes(&self.client, &self.bucket, id).await?;
-        println!("download res: {:?}", res);
+        log::debug!("download res: {:?}", res);
         Ok(res)
     }
 }
@@ -70,17 +70,17 @@ pub struct MemBytesDaoImpl {
 #[async_trait]
 impl BytesDao for MemBytesDaoImpl {
     async fn save_bytes(&self, id: &str, bytes: Vec<u8>) -> Result<()> {
-        println!("id: {:?}", id);
+        log::debug!("id: {:?}", id);
 
         let mut s = self.state.lock().unwrap();
-        println!("saving bytes: {:?}", bytes);
+        log::debug!("saving bytes: {:?}", bytes);
         s.insert(id.to_owned(), bytes);
 
         Ok(())
     }
 
     async fn load_bytes(&self, id: &str) -> Result<Option<Vec<u8>>> {
-        println!("loading bytes: {:?}", id);
+        log::debug!("loading bytes: {:?}", id);
 
         let s = self.state.lock().unwrap();
         Ok(s.get(id).map(|o| o.to_owned()))

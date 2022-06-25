@@ -33,20 +33,20 @@ pub async fn download_bytes(
     bucket: &str,
     key: &str,
 ) -> Result<Option<Vec<u8>>, Error> {
-    println!("will get object..");
+    log::debug!("will get object..");
 
     match client.get_object().bucket(bucket).key(key).send().await {
         Ok(resp) => {
             let data = resp.body.collect().await;
 
             let bytes = data.unwrap().into_bytes().to_vec();
-            println!("data: {:?}", bytes);
+            log::debug!("data: {:?}", bytes);
 
             Ok(Some(bytes))
         }
 
         Err(e) => {
-            println!("Error retrieving image: {} for key: {}", e, key);
+            log::error!("Error retrieving image: {} for key: {}", e, key);
             match &e {
                 SdkError::ServiceError { err, .. } => match &err.kind {
                     GetObjectErrorKind::Unhandled(m) => {
@@ -62,7 +62,7 @@ pub async fn download_bytes(
                     // this is what we intuitively expect for "not found" but for some reason we get GetObjectErrorKind::Unhandled with "access denied"
                     // we handle it the same anyway
                     GetObjectErrorKind::NoSuchKey(m) => {
-                        println!("No such key error: {} for key: {}", m, key);
+                        log::error!("No such key error: {} for key: {}", m, key);
                         Ok(None)
                     }
                     _ => Err(e.into()),
@@ -83,7 +83,7 @@ pub async fn upload_bytes(
 ) -> Result<(), Error> {
     // let stream = ByteStream::from(bytes);
     let stream = bytes.into();
-    println!("will put object..");
+    log::debug!("will put object..");
 
     let resp = client
         .put_object()
@@ -93,11 +93,11 @@ pub async fn upload_bytes(
         .send()
         .await?;
 
-    println!("Upload success. Version: {:?}", resp.version_id);
+    log::debug!("Upload success. Version: {:?}", resp.version_id);
 
     let resp = client.get_object().bucket(bucket).key(key).send().await?;
     let data = resp.body.collect().await;
-    println!("data: {:?}", data.unwrap().into_bytes());
+    log::trace!("data: {:?}", data.unwrap().into_bytes());
 
     Ok(())
 }
@@ -115,7 +115,7 @@ pub async fn upload_object(
 
     match body {
         Ok(b) => {
-            println!("will put object..");
+            log::debug!("will put object..");
 
             let resp = client
                 .put_object()
@@ -125,15 +125,15 @@ pub async fn upload_object(
                 .send()
                 .await?;
 
-            println!("Upload success. Version: {:?}", resp.version_id);
+            log::debug!("Upload success. Version: {:?}", resp.version_id);
 
             let resp = client.get_object().bucket(bucket).key(key).send().await?;
             let data = resp.body.collect().await;
-            println!("data: {:?}", data.unwrap().into_bytes());
+            log::trace!("data: {:?}", data.unwrap().into_bytes());
         }
         Err(e) => {
-            println!("Got an error uploading object:");
-            println!("{}", e);
+            log::error!("Got an error uploading object:");
+            log::error!("{}", e);
             process::exit(1);
         }
     }

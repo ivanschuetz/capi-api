@@ -2,7 +2,9 @@ appenders:
   console:
     kind: console
     encoder:
-      pattern: "{d(%Y-%m-%d %H:%M:%S)} {M} {f}:{L} {l} - {m}\n"
+      # pattern: "{d(%Y-%m-%d %H:%M:%S)} {M} {f}:{L} {l} - {m}\n"
+      # pattern: "{d(%Y-%m-%d %H:%M:%S)} {f}:{L} {l} - {m}\n"
+      pattern: "{d(%Y-%m-%d %H:%M:%S)} {l} - {m}\n"
     filters:
       - kind: threshold
         level: trace
@@ -28,12 +30,17 @@ appenders:
 
 # for now hardcoding the dependent projects here, see https://github.com/estk/log4rs/issues/211
 loggers:
-  backend:
+  api:
     level: trace
     appenders:
       - console
       # - file
-  warp:
+  mbase:
+    level: trace
+    appenders:
+      - console
+      # - file
+  rocket:
     level: trace
     appenders:
       - console

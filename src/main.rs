@@ -10,7 +10,8 @@ use dotenv::dotenv;
 use mbase::api::contract::Contract;
 use mbase::api::teal_api::TealFileLoader;
 use mbase::api::version::Version;
-use mbase::dependencies::{algod, indexer};
+use mbase::dependencies::{self, algod, indexer, Env};
+use mbase::logger::init_logger;
 use mbase::models::dao_app_id::DaoAppId;
 use mbase::models::hash::GlobalStateHash;
 use mbase::state::dao_app_state::dao_global_state;
@@ -21,10 +22,9 @@ use rocket::State;
 use rocket::{response::Debug, Data};
 use rocket_cors::{AllowedHeaders, AllowedOrigins};
 use sha2::Digest;
-use std::env;
+use std::thread::sleep;
 
 mod dao;
-mod logger;
 
 #[post("/image/<app_id>", format = "binary", data = "<data>")]
 async fn save_image(
@@ -70,15 +70,15 @@ async fn save_bytes(
         .await
         .map_err(|e| Debug(anyhow::Error::msg(format!("{e:?}"))))?;
 
-    println!("byte_count: {:?}", byte_count);
-    println!("vec: {:?}", vec);
+    log::trace!("byte_count: {:?}", byte_count);
+    log::trace!("vec: {:?}", vec);
 
     let hash = hash(&vec);
     if is_on_chain_with_dao_state(app_id, &hash, state).await? {
         deps.bytes_dao.save_bytes(&hash, vec).await?;
         Ok(Some("done...".to_owned()))
     } else {
-        println!("Didn't find app id or hash in the app");
+        log::warn!("Didn't find app id or hash in the app");
         Ok(None)
     }
 }
@@ -127,6 +127,8 @@ async fn get_image_jpeg(
     deps: &State<Box<Deps>>,
     id: String,
 ) -> Result<Custom<Option<Vec<u8>>>, Debug<anyhow::Error>> {
+    sleep(std::time::Duration::from_secs(5));
+
     let maybe_bytes = deps.bytes_dao.load_bytes(&id).await?;
     // we expect all the stored images to be in jpeg format - if stored with our frontend (which should be the only one talking to the backend)
     // if somehow someone manages to store something not jpeg, then this response may be corrupted
@@ -146,7 +148,7 @@ struct Deps {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // init_logger();
+    init_logger()?;
 
     dotenv().ok();
 
@@ -158,10 +160,10 @@ async fn main() -> Result<()> {
         teal_api,
     };
 
-    let env = environment();
-
+    let env = dependencies::env();
+    log::info!("env: {env:?}");
     let frontend_host = frontend_host(&env);
-    println!("frontend_host: {}", frontend_host);
+    log::info!("frontend_host: {frontend_host}");
 
     let allowed_origins = AllowedOrigins::some_exact(&[frontend_host]);
 
@@ -267,7 +269,7 @@ async fn is_on_chain_indexer(app_id: u64, hash: &str, key: &str) -> Result<bool>
                     // key not found in app - if it's a capi app, this should be rare, as dao setup initializes it (it can be empty but key should be there)
                     // can happen if: capi dao creation was interrupted (app created but not setup) or the app id is not a capi app
                     None => {
-                        println!("App ({app_id}) key not present.");
+                        log::warn!("App ({app_id}) key not present.");
                         Ok(false)
                     }
                 }
@@ -291,18 +293,4 @@ fn frontend_host(env: &Env) -> &'static str {
         Env::Local => "http://localhost:3000",
         Env::Test => "http://foo.capi.finance",
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum Env {
-    Local,
-    Test,
-}
-
-fn environment() -> Env {
-    let env = env::var("TEST_ENV").unwrap();
-    println!("Env value: {}", env);
-    let env = if env == "1" { Env::Test } else { Env::Local };
-    log::info!("Environment: {:?}", env);
-    env
 }
