@@ -2,6 +2,8 @@
 #[macro_use]
 extern crate rocket;
 
+use algonaut::algod::v2::Algod;
+use algonaut::indexer::v2::Indexer;
 use algonaut::model::indexer::v2::QueryApplicationInfo;
 use anyhow::{Error, Result};
 use dao::bytes_dao::{AwsBytesDao, BytesDao};
@@ -10,7 +12,7 @@ use dotenv::dotenv;
 use mbase::api::contract::Contract;
 use mbase::api::teal_api::TealFileLoader;
 use mbase::api::version::Version;
-use mbase::dependencies::{self, algod, indexer, Env};
+use mbase::dependencies::{self, algod_for_net, indexer_for_net, Env};
 use mbase::logger::init_logger;
 use mbase::models::dao_app_id::DaoAppId;
 use mbase::models::hash::GlobalStateHash;
@@ -74,7 +76,7 @@ async fn save_bytes(
     log::trace!("vec: {:?}", vec);
 
     let hash = hash(&vec);
-    if is_on_chain_with_dao_state(app_id, &hash, state).await? {
+    if is_on_chain_with_dao_state(&deps.algod, app_id, &hash, state).await? {
         deps.bytes_dao.save_bytes(&hash, vec).await?;
         Ok(Some("done...".to_owned()))
     } else {
@@ -143,6 +145,9 @@ fn write_bytes_to_file() {
 
 struct Deps {
     bytes_dao: Box<dyn BytesDao>,
+    algod: Algod,
+    #[allow(dead_code)]
+    indexer: Indexer,
     teal_api: TealFileLoader,
 }
 
@@ -152,19 +157,25 @@ async fn main() -> Result<()> {
 
     dotenv().ok();
 
+    log::debug!("---------------------------------------------");
+    let env = dependencies::env();
+    let net = dependencies::network();
+    log::debug!("---------------------------------------------");
+
+    let algod = algod_for_net(&net);
+    let indexer = indexer_for_net(&net);
     let bytes_dao: Box<dyn BytesDao> = Box::new(AwsBytesDao::new().await?);
     let teal_api = TealFileLoader {};
 
     let deps = Deps {
+        algod,
+        indexer,
         bytes_dao,
         teal_api,
     };
 
-    let env = dependencies::env();
-    log::info!("env: {env:?}");
     let frontend_host = frontend_host(&env);
     log::info!("frontend_host: {frontend_host}");
-
     let allowed_origins = AllowedOrigins::some_exact(&[frontend_host]);
 
     // You can also deserialize this
@@ -223,9 +234,12 @@ enum StateField {
     DescriptionHash,
 }
 
-async fn is_on_chain_with_dao_state(app_id: u64, hash: &str, field: StateField) -> Result<bool> {
-    let algod = algod();
-
+async fn is_on_chain_with_dao_state(
+    algod: &Algod,
+    app_id: u64,
+    hash: &str,
+    field: StateField,
+) -> Result<bool> {
     let state = dao_global_state(&algod, DaoAppId(app_id)).await?;
     let value = match field {
         StateField::ImageHash => state.image_hash,
@@ -244,9 +258,12 @@ async fn is_on_chain_with_dao_state(app_id: u64, hash: &str, field: StateField) 
 // 2) we already have a state reader in the domain, which uses algod (used in is_on_chain_with_dao_state)
 // leaving this anyway, since at least algoexplorer removed these kind of queries from algod (only possible with indexer)
 #[allow(dead_code)]
-async fn is_on_chain_indexer(app_id: u64, hash: &str, key: &str) -> Result<bool> {
-    let indexer = indexer();
-
+async fn is_on_chain_indexer(
+    indexer: &Indexer,
+    app_id: u64,
+    hash: &str,
+    key: &str,
+) -> Result<bool> {
     let app_info_res = indexer
         .application_info(
             app_id,
