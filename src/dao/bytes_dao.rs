@@ -92,8 +92,8 @@ mod test {
     use std::{collections::HashMap, sync::Mutex};
 
     use super::{BytesDao, MemBytesDaoImpl};
-    use crate::logger::init_logger;
     use anyhow::Result;
+    use mbase::logger::init_logger;
 
     #[test]
     #[ignore]
