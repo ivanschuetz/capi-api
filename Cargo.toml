@@ -8,8 +8,6 @@ edition = "2018"
 [dependencies]
 mbase = { path = "./mbase" } 
 
-# algonaut = { git = "https://github.com/manuelmauro/algonaut", branch = "main", features = ["rustls"], default-features = false }
-algonaut = { path = "../../algonaut", features = ["rustls"], default-features = false }
 anyhow = "1.0"
 serde = {version = "1.0", features = ["derive"]}
 rocket = "0.5.0-rc.1"
