@@ -1,0 +1,2 @@
+[build.env]
+passthrough = ["TARGET_CC=x86_64-unknown-linux-gnu-gcc", "TARGET_AR=x86_64-unknown-linux-gnu-ar"]

@@ -40,7 +40,12 @@ async fn get_teal_template(
     let version_numer = version.parse().map_err(Error::msg)?;
     let version = Version(version_numer);
 
+    log::debug!(
+        "Will retrieve template: {contract:?} with version: {}",
+        version.0
+    );
     let res = deps.teal_api.template(contract, version)?;
+    log::debug!("Will return teal source, is some: {}", res.is_some());
     Ok(res.map(|r| r.template.0))
 }
 
@@ -56,7 +61,9 @@ struct Deps {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    println!("Starting, will initialize logs..");
     init_logger()?;
+    log::info!("Log initialized");
 
     dotenv().ok();
 
